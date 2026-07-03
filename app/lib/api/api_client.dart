@@ -196,10 +196,16 @@ class ApiClient extends ChangeNotifier {
     return '$_baseUrl/api/cover/$coverArtId?token=$_token$sizeParam';
   }
 
+  // When true, advertise only already-lossy formats so the server transcodes
+  // lossless sources (flac/wav/ogg) to AAC — a user setting to trade quality for
+  // smaller, smoother, cached, seekable playback. Kept in sync by PlayerService.
+  bool preferAac = false;
+
   // Stream URL includes token (query) so native players can authenticate,
   // and canPlay so the server knows whether to transcode.
   Uri streamUri(int trackId) {
-    final canPlay = _clientCanPlay().join(',');
+    final formats = preferAac ? const {'mp3', 'm4a'} : _clientCanPlay();
+    final canPlay = formats.join(',');
     return Uri.parse(
         '$_baseUrl/api/stream/$trackId?token=$_token&canPlay=$canPlay');
   }

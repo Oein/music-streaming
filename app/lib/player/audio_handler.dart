@@ -42,11 +42,28 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _subs.add(player.playingStream.listen((_) => _broadcastState()));
 
     // Push the current track's metadata (from the AudioSource tag) to the OS.
+    // Merge in the player's known duration so the notification seek bar has a
+    // range even if the tag didn't carry one.
     _subs.add(player.sequenceStateStream.listen((seqState) {
       if (_remoteMode) return;
       final src = seqState?.currentSource;
       final tag = src?.tag;
-      if (tag is MediaItem) mediaItem.add(tag);
+      if (tag is MediaItem) {
+        final dur = player.duration;
+        mediaItem.add(dur != null && tag.duration == null
+            ? tag.copyWith(duration: dur)
+            : tag);
+      }
+    }));
+
+    // Once the real duration is decoded, update the current item so the OS
+    // media control shows an accurate, seekable progress bar.
+    _subs.add(player.durationStream.listen((dur) {
+      if (_remoteMode || dur == null) return;
+      final current = mediaItem.value;
+      if (current != null && current.duration != dur) {
+        mediaItem.add(current.copyWith(duration: dur));
+      }
     }));
 
     _broadcastState();

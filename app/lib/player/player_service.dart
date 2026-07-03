@@ -8,6 +8,7 @@ import '../models/models.dart';
 import '../remote/remote_service.dart';
 import '../settings/settings_service.dart';
 import 'audio_handler.dart';
+import 'media_session.dart' as media_session;
 
 // Playback facade for the UI. When the remote target is THIS device it drives
 // the local just_audio player. When the target is another device it forwards
@@ -52,6 +53,41 @@ class PlayerService extends ChangeNotifier {
     api.addListener(_onAuthChanged);
     // Rebuild the player when buffer/cache settings change.
     settings.onPlaybackConfigChanged(_reconfigure);
+    // Keep the API's format preference in sync, and reload the current track
+    // when the user toggles AAC transcoding on/off.
+    api.preferAac = settings.forceAac;
+    settings.onAudioFormatChanged(() {
+      api.preferAac = settings.forceAac;
+      _reloadCurrentForFormat();
+    });
+    // Wire the browser MediaSession (web only; no-op elsewhere) so the browser's
+    // media controls / media keys / Bluetooth buttons drive playback.
+    media_session.initMediaSession(
+      onPlay: play,
+      onPause: pause,
+      onNext: next,
+      onPrevious: previous,
+      onSeek: seek,
+    );
+  }
+
+  // Push current track + playback to the browser MediaSession (web only).
+  void _updateMediaSession() {
+    final t = currentTrack;
+    if (t != null) {
+      media_session.setMediaMetadata(
+        title: t.title,
+        artist: t.artist,
+        artworkUrl:
+            t.coverArtId != null ? api.coverUrl(t.coverArtId, size: 512) : null,
+      );
+    }
+    media_session.setMediaPlaybackState(playing: isPlaying);
+    media_session.setMediaPositionState(
+      duration: duration,
+      position: position,
+      speed: _remote ? 1.0 : _player.speed,
+    );
   }
 
   // Build an AudioPlayer whose buffering is sized from user settings:
@@ -81,18 +117,24 @@ class PlayerService extends ChangeNotifier {
         if (upcoming.isNotEmpty) api.prewarm(upcoming);
       }
       _broadcast();
+      _updateMediaSession();
       notifyListeners();
     }));
     _subs.add(_player.playerStateStream.listen((_) {
       _broadcast();
+      _updateMediaSession();
       notifyListeners();
     }));
     _subs.add(_player.positionStream.listen((p) {
       _position = p;
       _broadcast();
+      _updateMediaSession();
       notifyListeners();
     }));
-    _subs.add(_player.durationStream.listen((_) => notifyListeners()));
+    _subs.add(_player.durationStream.listen((_) {
+      _updateMediaSession();
+      notifyListeners();
+    }));
     // Volume changes (incl. those driven by a remote controller) update the UI
     // and are reported to any controller device.
     _subs.add(_player.volumeStream.listen((_) {
@@ -233,8 +275,11 @@ class PlayerService extends ChangeNotifier {
       final ms = (remote.remoteState?['duration'] as int?) ?? 0;
       return ms > 0 ? Duration(milliseconds: ms) : _trackDuration;
     }
-    final d = _player.duration;
-    return (d != null && d.inMilliseconds > 0) ? d : _trackDuration;
+    // Prefer the authoritative track duration (from the original file's
+    // metadata) over the player's. Transcoded ADTS AAC has no container-level
+    // duration, so the player over-estimates it from the bitrate; the DB value
+    // is the true length. Fall back to the player when metadata is missing.
+    return _trackDuration ?? _player.duration;
   }
 
   Stream<Duration> get positionStream => _remote
@@ -249,8 +294,7 @@ class PlayerService extends ChangeNotifier {
   Stream<Duration?> get durationStream => _remote
       ? Stream<Duration?>.periodic(
           const Duration(milliseconds: 500), (_) => duration)
-      : _player.durationStream
-          .map((d) => (d != null && d.inMilliseconds > 0) ? d : _trackDuration);
+      : _player.durationStream.map((d) => _trackDuration ?? d);
 
   // Buffered position for the progress bar's secondary track (local only).
   Duration get bufferedPosition =>
@@ -300,6 +344,18 @@ class PlayerService extends ChangeNotifier {
     }
   }
 
+  // Explicit play/pause (distinct from togglePlay) — used by the web MediaSession
+  // handlers, which send discrete play/pause actions.
+  Future<void> play() async {
+    if (_remote) return remote.sendCommand('play');
+    await _player.play();
+  }
+
+  Future<void> pause() async {
+    if (_remote) return remote.sendCommand('pause');
+    await _player.pause();
+  }
+
   Future<void> next() async {
     if (_remote) return remote.sendCommand('next');
     await _player.seekToNext();
@@ -314,6 +370,22 @@ class PlayerService extends ChangeNotifier {
     if (_remote)
       return remote.sendCommand('seek', {'position': pos.inMilliseconds});
     await _player.seek(pos);
+  }
+
+  // Rebuild the current queue's sources with the new stream format (AAC toggle),
+  // preserving the current track, position, and play/pause state. Locally cached
+  // tracks keep playing from cache regardless of the setting.
+  Future<void> _reloadCurrentForFormat() async {
+    if (_remote || _queue.isEmpty) return;
+    final idx = _player.currentIndex ?? 0;
+    final pos = _player.position;
+    final wasPlaying = _player.playing;
+    final sources = await Future.wait(_queue.map(_cachedSourceFor));
+    _source = ConcatenatingAudioSource(children: sources);
+    await _player.setAudioSource(_source!,
+        initialIndex: idx, initialPosition: pos);
+    if (wasPlaying) await _player.play();
+    notifyListeners();
   }
 
   Future<void> shuffleQueue() async {
@@ -456,6 +528,11 @@ class PlayerService extends ChangeNotifier {
         id: t.id.toString(),
         title: t.title,
         artist: t.artist ?? 'Unknown',
+        // Duration (seconds → Duration) so the OS media notification can draw a
+        // working seek bar immediately, before just_audio has loaded the file.
+        duration: t.duration != null
+            ? Duration(milliseconds: (t.duration! * 1000).round())
+            : null,
         artUri: t.coverArtId != null
             ? Uri.parse(api.coverUrl(t.coverArtId, size: 256))
             : null,

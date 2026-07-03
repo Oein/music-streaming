@@ -19,6 +19,9 @@ class SettingsService extends ChangeNotifier {
   String albumSort = 'name';
   // App-internal playback volume (0.0–1.0), NOT the OS/system volume.
   double volume = 1.0;
+  // Force server-side AAC transcoding instead of native lossless playback.
+  // Trades audio quality for smaller/smoother (cached, seekable) streams.
+  bool forceAac = false;
 
   Future<void> load() async {
     try {
@@ -32,6 +35,7 @@ class SettingsService extends ChangeNotifier {
         albumListView = (j['albumListView'] as bool?) ?? albumListView;
         albumSort = (j['albumSort'] as String?) ?? albumSort;
         volume = (j['volume'] as num?)?.toDouble().clamp(0.0, 1.0) ?? volume;
+        forceAac = (j['forceAac'] as bool?) ?? forceAac;
       }
     } catch (_) {
       /* keep defaults */
@@ -49,6 +53,7 @@ class SettingsService extends ChangeNotifier {
           'albumListView': albumListView,
           'albumSort': albumSort,
           'volume': volume,
+          'forceAac': forceAac,
         }),
       );
     } catch (_) {
@@ -65,8 +70,10 @@ class SettingsService extends ChangeNotifier {
     bool? albumListView,
     String? albumSort,
     double? volume,
+    bool? forceAac,
   }) async {
     var playbackChanged = false;
+    var formatChanged = false;
     if (preloadCount != null && preloadCount != this.preloadCount) {
       this.preloadCount = preloadCount;
       playbackChanged = true;
@@ -81,13 +88,23 @@ class SettingsService extends ChangeNotifier {
     if (albumListView != null) this.albumListView = albumListView;
     if (albumSort != null) this.albumSort = albumSort;
     if (volume != null) this.volume = volume.clamp(0.0, 1.0);
+    if (forceAac != null && forceAac != this.forceAac) {
+      this.forceAac = forceAac;
+      formatChanged = true;
+    }
     await _save();
     notifyListeners();
     if (playbackChanged) _playbackConfigListeners.forEach((f) => f());
+    if (formatChanged) _formatListeners.forEach((f) => f());
   }
 
   // PlayerService subscribes here to rebuild its player on load-config changes.
   final List<VoidCallback> _playbackConfigListeners = [];
   void onPlaybackConfigChanged(VoidCallback cb) =>
       _playbackConfigListeners.add(cb);
+
+  // PlayerService subscribes here to reload the current track with the new
+  // stream format (AAC vs native) when [forceAac] is toggled.
+  final List<VoidCallback> _formatListeners = [];
+  void onAudioFormatChanged(VoidCallback cb) => _formatListeners.add(cb);
 }

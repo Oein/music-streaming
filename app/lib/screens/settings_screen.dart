@@ -45,6 +45,14 @@ class SettingsScreen extends StatelessWidget {
             value: s.showLoadingIndicator,
             onChanged: (v) => s.update(showLoadingIndicator: v),
           ),
+          SwitchListTile(
+            title: const Text('Play as AAC'),
+            subtitle: const Text(
+                'Transcode lossless (FLAC/WAV) to AAC — smaller & smoother, '
+                'but lossy quality'),
+            value: s.forceAac,
+            onChanged: (v) => s.update(forceAac: v),
+          ),
           const Divider(),
           const _SectionHeader('Library'),
           SwitchListTile(
