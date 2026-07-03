@@ -46,8 +46,9 @@ async function main() {
     prefix: "/admin/",
   });
 
-  // Serve the built Flutter web app from ../web (present after deployment).
-  const webRoot = path.resolve(__dirname, "../web");
+  // Serve the built Flutter web app. WEB_DIR (a mounted volume in the
+  // container) overrides the bundled ../web dir when set.
+  const webRoot = config.webDir || path.resolve(__dirname, "../web");
   if (existsSync(webRoot)) {
     await app.register(fastifyStatic, {
       root: webRoot,
@@ -57,7 +58,8 @@ async function main() {
   }
 
   // Serve native app artifacts (apk/ipa/dmg) for download, if present.
-  const downloadsRoot = path.resolve(__dirname, "../downloads");
+  // DOWNLOADS_DIR (a mounted volume) overrides the bundled ../downloads dir.
+  const downloadsRoot = config.downloadsDir || path.resolve(__dirname, "../downloads");
   if (existsSync(downloadsRoot)) {
     await app.register(fastifyStatic, {
       root: downloadsRoot,
