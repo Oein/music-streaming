@@ -1,0 +1,54 @@
+# Miscellaneous
+*.class
+*.log
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+migrate_working_dir/
+
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter / Dart / Pub
+**/doc/api/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+
+# Local, per-developer config (copy from server_url.template.dart)
+lib/config/server_url.dart
+
+# Android
+android/local.properties
+android/.gradle/
+android/app/key.properties
+android/key.properties
+android/**/GeneratedPluginRegistrant.java
+**/android/captures/
+
+# iOS
+ios/Flutter/.last_build_id
+ios/Flutter/ephemeral/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+ios/Pods/
+ios/.symlinks/
+
+# macOS
+macos/Flutter/ephemeral/
+macos/Flutter/GeneratedPluginRegistrant.swift
+macos/Pods/
+
+# Symbolication / obfuscation
+app.*.symbols
+app.*.map.json

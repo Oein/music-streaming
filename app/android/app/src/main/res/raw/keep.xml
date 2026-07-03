@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The media-notification favorite icons are referenced only at runtime by
+     name (getIdentifier), so the resource linker treats them as unused and
+     strips them. Force them to be kept so audio_service can resolve them. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_favorite,@drawable/ic_favorite_border" />

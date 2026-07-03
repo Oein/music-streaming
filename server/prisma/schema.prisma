@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Single-user auth. One row expected.
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+model LibraryFolder {
+  id            Int       @id @default(autoincrement())
+  path          String    @unique
+  addedAt       DateTime  @default(now())
+  lastScannedAt DateTime?
+  // Comma-separated extensions (no dot) to include, e.g. "mp3,flac".
+  // Empty/null means include every supported audio extension.
+  extensions    String?
+}
+
+model Album {
+  id          Int      @id @default(autoincrement())
+  name        String
+  albumArtist String?
+  year        Int?
+  coverArtId  Int?
+  coverArt    CoverArt? @relation(fields: [coverArtId], references: [id])
+  tracks      Track[]
+  createdAt   DateTime @default(now())
+  // Grouping key: album-artist tag when present, else the containing folder.
+  // This merges an album's tracks even when per-track artists differ.
+  groupKey    String   @unique
+}
+
+model Track {
+  id         Int      @id @default(autoincrement())
+  filePath   String   @unique
+  title      String
+  artist     String?
+  albumId    Int?
+  album      Album?   @relation(fields: [albumId], references: [id])
+  trackNo    Int?
+  discNo     Int?
+  duration   Float?
+  format     String   // ogg | wav | mp3 | flac | m4a
+  bitrate    Int?
+  sampleRate Int?
+  fileSize   Int
+  mtimeMs    Float
+  coverArtId Int?
+  coverArt   CoverArt? @relation(fields: [coverArtId], references: [id])
+  createdAt  DateTime @default(now())
+
+  playlistTracks PlaylistTrack[]
+  favorite       FavoriteTrack?
+}
+
+model CoverArt {
+  id     Int     @id @default(autoincrement())
+  hash   String  @unique
+  mime   String
+  data   Bytes
+  albums Album[]
+  tracks Track[]
+}
+
+model Playlist {
+  id        Int             @id @default(autoincrement())
+  name      String
+  createdAt DateTime        @default(now())
+  tracks    PlaylistTrack[]
+}
+
+model PlaylistTrack {
+  id         Int      @id @default(autoincrement())
+  playlistId Int
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  trackId    Int
+  track      Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  position   Int
+
+  @@unique([playlistId, position])
+}
+
+model FavoriteTrack {
+  id        Int      @id @default(autoincrement())
+  trackId   Int      @unique
+  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
