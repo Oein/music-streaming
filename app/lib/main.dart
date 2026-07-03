@@ -1,6 +1,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'api/api_client.dart';
@@ -142,7 +143,19 @@ class _MusicAppState extends State<MusicApp> {
             });
           }
           if (!api.isLoggedIn) _wasLoggedIn = false;
-          return api.isLoggedIn ? const HomeScreen() : const LoginScreen();
+          final content =
+              api.isLoggedIn ? const HomeScreen() : const LoginScreen();
+          // Space toggles play/pause app-wide. Focused text fields / buttons
+          // consume Space first, so this only fires when nothing else claims it.
+          return CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.space): () {
+                final player = context.read<PlayerService>();
+                if (player.currentTrack != null) player.togglePlay();
+              },
+            },
+            child: Focus(autofocus: true, child: content),
+          );
         },
       ),
     );

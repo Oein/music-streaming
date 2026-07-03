@@ -230,8 +230,10 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
 // Scale is the window measured against a reference layout, so a small window —
 // even a wide-but-short 16:9 one — shrinks type/cover/controls together and the
 // title keeps its room instead of getting clipped.
+// Capped at 1.0 so large displays don't blow type/controls up past the
+// reference size — only smaller windows scale down.
 double _scaleFrom(double w, double h, double refW, double refH) =>
-    math.min(w / refW, h / refH).clamp(0.4, 1.35).toDouble();
+    math.min(w / refW, h / refH).clamp(0.4, 1.0).toDouble();
 
 // Landscape: cover on the left, details filling the whole remaining width on
 // the right — a faithful clone of the beautifulfullscreen horizontal layout.
@@ -249,11 +251,10 @@ class _HorizontalLayout extends StatelessWidget {
         final w = c.maxWidth - _volumeGutter;
         final scale = _scaleFrom(w, c.maxHeight, 1200, 720);
         // Cover tracks the window (no fixed width): a fraction of height, but
-        // never so wide it starves the title of horizontal room.
-        final coverSize = math
-            .min(c.maxHeight * 0.62, w * 0.42)
-            .clamp(96.0, 560.0)
-            .toDouble();
+        // never so wide it starves the title of horizontal room. Bounded to the
+        // reference's ~340px so it doesn't dominate large displays.
+        final coverSize =
+            math.min(c.maxHeight * 0.5, w * 0.34).clamp(96.0, 340.0).toDouble();
         return Padding(
           // Symmetric vertical padding so the content stays truly centered
           // whether or not the (overlaid, auto-hiding) header is showing.
@@ -453,7 +454,7 @@ class _TrackInfo extends StatelessWidget {
     late final List<double> t;
     switch (mode) {
       case _NpMode.landscape:
-        t = const [66.0, 56.0, 46.0, 40.0];
+        t = const [54.0, 46.0, 40.0, 34.0];
         break;
       case _NpMode.square:
         t = const [52.0, 44.0, 38.0, 32.0];
@@ -554,21 +555,29 @@ class _Controller extends StatelessWidget {
         ? Icons.repeat_one_rounded
         : Icons.repeat_rounded;
 
+    // The play button footprint (_FlatIcon = icon + 6px padding all around). The
+    // buffering spinner uses the exact same box so the controls don't shrink /
+    // jump when the loading indicator flickers on and off.
+    final playSize = 46 * scale;
+    final playBox = playSize + 12;
     final playPause = showBuffer
         ? SizedBox(
-            width: 42 * scale,
-            height: 42 * scale,
-            child: const Padding(
-              padding: EdgeInsets.all(6),
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white),
+            width: playBox,
+            height: playBox,
+            child: Center(
+              child: SizedBox(
+                width: playSize * 0.72,
+                height: playSize * 0.72,
+                child: const CircularProgressIndicator(
+                    strokeWidth: 2.5, color: Colors.white),
+              ),
             ),
           )
         : _FlatIcon(
             icon: player.isPlaying
                 ? Icons.pause_rounded
                 : Icons.play_arrow_rounded,
-            size: 46 * scale,
+            size: playSize,
             onTap: player.togglePlay,
           );
 
@@ -586,9 +595,9 @@ class _Controller extends StatelessWidget {
                   children: [
                     _ToggleIcon(
                       icon: Icons.shuffle_rounded,
-                      active: false,
+                      active: player.shuffleEnabled,
                       size: 24 * scale,
-                      onTap: player.shuffleQueue,
+                      onTap: player.toggleShuffle,
                     ),
                     _ToggleIcon(
                       icon: repeatIcon,

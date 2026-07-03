@@ -91,8 +91,11 @@ class RemoteService extends ChangeNotifier {
         break;
       case 'state':
         // A device reported its state; keep it if it's our active target.
+        // MERGE (not replace) so lightweight frequent updates (position, etc.)
+        // don't erase the occasionally-sent full queue.
         if (msg['from'] == _activeDeviceId) {
-          remoteState = (msg['state'] as Map).cast<String, dynamic>();
+          final incoming = (msg['state'] as Map).cast<String, dynamic>();
+          remoteState = {...?remoteState, ...incoming};
           notifyListeners();
         }
         break;

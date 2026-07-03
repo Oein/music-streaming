@@ -230,11 +230,33 @@ class PlayerService extends ChangeNotifier {
     return _position;
   }
 
-  List<Track> get queue => _queue;
-  int? get currentIndex => _remote ? null : _player.currentIndex;
+  // When remoting, mirror the controlled device's queue (broadcast by it);
+  // otherwise the local queue.
+  List<Track> get queue {
+    if (_remote) {
+      final raw = remote.remoteState?['queue'];
+      if (raw is List) {
+        return raw
+            .whereType<Map>()
+            .map((e) => Track.fromJson(e.cast<String, dynamic>()))
+            .toList();
+      }
+      return const [];
+    }
+    return _queue;
+  }
+
+  int? get currentIndex => _remote
+      ? (remote.remoteState?['queueIndex'] as int?)
+      : _player.currentIndex;
   Stream<int?> get currentIndexStream => _player.currentIndexStream;
 
   bool get _remote => remote.isRemote;
+
+  // Shuffle is a persistent mode (enable/disable), not a one-shot re-shuffle.
+  bool get shuffleEnabled => _remote
+      ? (remote.remoteState?['shuffle'] as bool? ?? false)
+      : _player.shuffleModeEnabled;
 
   // ---- State getters (switch between local and remote source of truth) ----
 
@@ -388,16 +410,15 @@ class PlayerService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> shuffleQueue() async {
+  // Toggle shuffle as a persistent MODE. just_audio plays the queue in a
+  // shuffled order without mutating it; turning it off restores original order.
+  // The currently playing track keeps playing either way.
+  Future<void> toggleShuffle() async {
     if (_remote) return remote.sendCommand('shuffle');
-    final idx = _player.currentIndex ?? 0;
-    if (idx + 1 >= _queue.length) return;
-    final upcoming = _queue.sublist(idx + 1)..shuffle();
-    _queue = [_queue[idx], ...upcoming];
-    final sources = await Future.wait(_queue.map(_cachedSourceFor));
-    _source = ConcatenatingAudioSource(children: sources);
-    await _player.setAudioSource(_source!, initialIndex: 0);
-    await _player.play();
+    final enable = !_player.shuffleModeEnabled;
+    if (enable) await _player.shuffle(); // randomize the (upcoming) order
+    await _player.setShuffleModeEnabled(enable);
+    _broadcast();
     notifyListeners();
   }
 
@@ -413,6 +434,7 @@ class PlayerService extends ChangeNotifier {
     _queue.add(t);
     final src = await _cachedSourceFor(t);
     await _source?.add(src);
+    _broadcastQueue();
     notifyListeners();
   }
 
@@ -424,6 +446,7 @@ class PlayerService extends ChangeNotifier {
     _queue.insert(at, t);
     final src = await _cachedSourceFor(t);
     await _source?.insert(at, src);
+    _broadcastQueue();
     notifyListeners();
   }
 
@@ -433,6 +456,7 @@ class PlayerService extends ChangeNotifier {
     if (index < 0 || index >= _queue.length) return;
     _queue.removeAt(index);
     await _source?.removeAt(index);
+    _broadcastQueue();
     notifyListeners();
   }
 
@@ -444,6 +468,7 @@ class PlayerService extends ChangeNotifier {
     await _source?.removeAt(from);
     final src = await _cachedSourceFor(track);
     await _source?.insert(to, src);
+    _broadcastQueue();
     notifyListeners();
   }
 
@@ -497,7 +522,7 @@ class PlayerService extends ChangeNotifier {
         await removeFromQueue(payload!['index'] as int);
         break;
       case 'shuffle':
-        await shuffleQueue();
+        await toggleShuffle();
         break;
       case 'loop':
         await cycleLoop();
@@ -518,6 +543,7 @@ class PlayerService extends ChangeNotifier {
     _source = ConcatenatingAudioSource(children: sources);
     await _player.setAudioSource(_source!);
     await _player.play();
+    _broadcastQueue();
     notifyListeners();
   }
 
@@ -561,9 +587,16 @@ class PlayerService extends ChangeNotifier {
 
   // Report local playback so controllers can display it. Only meaningful when
   // this device is actually playing locally (not mirroring a remote target).
+  int _bcTick = 0;
+
   void _broadcast() {
     if (_remote) return;
     final t = currentTrack;
+    // Re-send the full queue every ~20 ticks (~4s) so a controller that
+    // connects mid-playback still gets the up-next list without waiting for a
+    // queue change. Cheap between-times updates omit it (merged on the other
+    // side).
+    final includeQueue = _bcTick++ % 20 == 0;
     remote.broadcastState({
       'trackId': t?.id,
       'title': t?.title,
@@ -574,6 +607,20 @@ class PlayerService extends ChangeNotifier {
       'position': _position.inMilliseconds,
       'duration': _player.duration?.inMilliseconds ?? 0,
       'volume': _player.volume,
+      'queueIndex': _player.currentIndex,
+      'shuffle': _player.shuffleModeEnabled,
+      if (includeQueue) 'queue': _queue.map(_trackJson).toList(),
+    });
+  }
+
+  // Broadcast the full queue to controllers (heavier, so only sent when the
+  // queue itself changes — not on every position tick). Controllers merge this
+  // into their remote state so they can show the target's up-next list.
+  void _broadcastQueue() {
+    if (_remote) return;
+    remote.broadcastState({
+      'queue': _queue.map(_trackJson).toList(),
+      'queueIndex': _player.currentIndex,
     });
   }
 
