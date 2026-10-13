@@ -1,4 +1,5 @@
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -42,6 +43,16 @@ Future<void> main() async {
     }
   } catch (e) {
     debugPrint('AudioService init failed or timed out: $e');
+  }
+  // iOS: use the `playback` AVAudioSession category so audio keeps going with
+  // the screen locked / app backgrounded (paired with UIBackgroundModes=audio).
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+    } catch (e) {
+      debugPrint('AudioSession configure failed: $e');
+    }
   }
 
   final api = ApiClient();
