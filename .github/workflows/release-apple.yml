@@ -1,0 +1,110 @@
+# Builds the macOS DMG and iOS IPA on GitHub's macOS runners.
+#
+# - Push a tag like v0.2.0 → builds both and publishes a GitHub Release with
+#   MusicPlayer.dmg and MusicPlayer.ipa attached.
+# - Run manually (Actions → Release (macOS / iOS) → Run workflow) → builds
+#   both and keeps them as workflow artifacts only, no release.
+#
+# The app's default server URL comes from the SERVER_URL repository secret
+# (lib/config/server_url.dart is gitignored). Without it the URL is empty and
+# the user enters it on the login screen. Note that whatever URL is set ends
+# up readable inside the published binaries.
+#
+# Neither artifact is signed with an Apple developer certificate:
+# - DMG: ad-hoc signed. After downloading, macOS quarantines it; run
+#   `xattr -cr /Applications/musicplayer.app` once after copying it over.
+# - IPA: unsigned. Re-sign on install with a sideloading tool
+#   (AltStore, Sideloadly, ...).
+name: Release (macOS / iOS)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: "3.47.4"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [macos, ios]
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Write server URL config
+        env:
+          SERVER_URL: ${{ secrets.SERVER_URL }}
+        run: |
+          printf "const String defaultServerUrl = '%s';\n" "$SERVER_URL" \
+            > lib/config/server_url.dart
+
+      - name: Version from tag
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "args=--build-name=${GITHUB_REF_NAME#v} --build-number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=--build-number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: flutter pub get
+
+      - name: Build DMG
+        if: matrix.target == 'macos'
+        run: |
+          flutter build macos --release ${{ steps.ver.outputs.args }}
+          mkdir -p dist
+          hdiutil create -volname MusicPlayer \
+            -srcfolder build/macos/Build/Products/Release/musicplayer.app \
+            -ov -format UDZO dist/MusicPlayer.dmg
+
+      - name: Build IPA (unsigned)
+        if: matrix.target == 'ios'
+        run: |
+          flutter build ios --release --no-codesign ${{ steps.ver.outputs.args }}
+          mkdir -p dist/Payload
+          cp -R build/ios/iphoneos/Runner.app dist/Payload/
+          (cd dist && zip -qry MusicPlayer.ipa Payload && rm -rf Payload)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: app/dist/*
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" --generate-notes
+          fi
