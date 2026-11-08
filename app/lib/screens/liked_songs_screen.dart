@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/safe_sides.dart';
 import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../favorites/favorites_service.dart';
@@ -32,7 +33,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
       body: Column(
         children: [
           Expanded(
-            child: FutureBuilder<List<Track>>(
+            child: SafeSides(child: FutureBuilder<List<Track>>(
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
@@ -53,7 +54,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                   ),
                 );
               },
-            ),
+            )),
           ),
           const MiniPlayer(),
         ],

@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../widgets/safe_sides.dart';
 import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
@@ -33,7 +34,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(widget.album.name)),
       bottomNavigationBar: const MiniPlayer(),
-      body: FutureBuilder<List<Track>>(
+      body: SafeSides(child: FutureBuilder<List<Track>>(
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
@@ -100,7 +101,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             },
           );
         },
-      ),
+      )),
     );
   }
 }

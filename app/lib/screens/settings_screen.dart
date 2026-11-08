@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/safe_sides.dart';
 import 'package:provider/provider.dart';
 import '../cache/audio_cache_service.dart';
 import '../settings/settings_service.dart';
@@ -11,7 +12,7 @@ class SettingsScreen extends StatelessWidget {
     final s = context.watch<SettingsService>();
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
+      body: SafeSides(child: ListView(
         children: [
           const _SectionHeader('Playback'),
           ListTile(
@@ -133,7 +134,7 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

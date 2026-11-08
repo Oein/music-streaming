@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../widgets/safe_sides.dart';
 import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
@@ -81,7 +82,7 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       body: Column(children: [
         Expanded(
-            child: _loading
+            child: SafeSides(child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : ListView(
                     children: [
@@ -126,7 +127,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           child: Center(child: Text('No results.')),
                         ),
                     ],
-                  )),
+                  ))),
         const MiniPlayer(),
       ]),
     );
@@ -188,10 +189,10 @@ class _AllAlbumsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Albums · "$query"')),
-      body: ListView.builder(
+      body: SafeSides(child: ListView.builder(
         itemCount: albums.length,
         itemBuilder: (context, i) => albumTile(context, albums[i]),
-      ),
+      )),
     );
   }
 }
@@ -206,7 +207,7 @@ class _AllTracksScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Songs · "$query"')),
-      body: ListView.builder(
+      body: SafeSides(child: ListView.builder(
         itemCount: tracks.length,
         itemBuilder: (context, i) => TrackTile(
           track: tracks[i],
@@ -214,7 +215,7 @@ class _AllTracksScreen extends StatelessWidget {
           onTap: () =>
               context.read<PlayerService>().playQueue(tracks, startIndex: i),
         ),
-      ),
+      )),
     );
   }
 }

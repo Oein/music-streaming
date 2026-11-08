@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/safe_sides.dart';
 import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../config/server_url.dart';
@@ -38,7 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
+      body: SafeSides(child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 380),
           child: Padding(
@@ -98,7 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
-      ),
+      )),
     );
   }
 }

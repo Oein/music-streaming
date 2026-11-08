@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../widgets/safe_sides.dart';
 import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
@@ -33,7 +34,7 @@ class QueueScreen extends StatelessWidget {
     final api = context.read<ApiClient>();
     return Scaffold(
       appBar: AppBar(title: const Text('Play Queue')),
-      body: Consumer<PlayerService>(
+      body: SafeSides(child: Consumer<PlayerService>(
         builder: (context, player, _) {
           final queue = player.queue;
           final current = player.currentIndex ?? 0;
@@ -88,7 +89,7 @@ class QueueScreen extends StatelessWidget {
             },
           );
         },
-      ),
+      )),
     );
   }
 }

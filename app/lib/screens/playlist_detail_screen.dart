@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/safe_sides.dart';
 import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
@@ -65,7 +66,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         ],
       ),
       bottomNavigationBar: const MiniPlayer(),
-      body: _loading
+      body: SafeSides(child: _loading
           ? const Center(child: CircularProgressIndicator())
           : ReorderableListView.builder(
               itemCount: _tracks.length,
@@ -101,7 +102,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   ),
                 );
               },
-            ),
+            )),
     );
   }
 }

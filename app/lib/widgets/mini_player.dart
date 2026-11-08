@@ -12,7 +12,9 @@ class MiniPlayer extends StatelessWidget {
   // When true (default), the player reserves and pads the bottom system inset
   // (gesture bar / taskbar) so it — and the content above it — stays clear of
   // the system navigation area. Set false when another widget below it (e.g. a
-  // NavigationBar) already handles that inset.
+  // NavigationBar) already handles that inset. The left/right insets
+  // (landscape notch / cutout) are always padded; the bar's background still
+  // runs edge to edge.
   final bool bottomSafe;
   const MiniPlayer({super.key, this.bottomSafe = true});
 
@@ -21,17 +23,27 @@ class MiniPlayer extends StatelessWidget {
     return _wrap(context, _buildInner(context));
   }
 
-  Widget _wrap(BuildContext context, Widget inner) {
-    if (!bottomSafe) return inner;
-    return SafeArea(top: false, child: inner);
+  Widget _wrap(BuildContext context, Widget? inner) {
+    // Nothing to show: still reserve the bottom inset when asked to, so the
+    // content above stays clear of the system navigation area.
+    if (inner == null) {
+      return bottomSafe
+          ? const SafeArea(top: false, child: SizedBox.shrink())
+          : const SizedBox.shrink();
+    }
+    // Paint the bar color under the insets, pad only the content.
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: SafeArea(top: false, bottom: bottomSafe, child: inner),
+    );
   }
 
-  Widget _buildInner(BuildContext context) {
+  Widget? _buildInner(BuildContext context) {
     final player = context.watch<PlayerService>();
     final remote = context.watch<RemoteService>();
     final track = player.currentTrack;
 
-    if (track == null && !remote.isRemote) return const SizedBox.shrink();
+    if (track == null && !remote.isRemote) return null;
 
     if (track == null && remote.isRemote) {
       return Material(

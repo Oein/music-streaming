@@ -91,6 +91,10 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
     final api = context.read<ApiClient>();
 
     final size = MediaQuery.of(context).size;
+    // System insets (landscape notch / cutout, home indicator, status bar).
+    // The background is full-bleed; every overlay positioned in the Stack
+    // below must offset by these so nothing lands under the notch.
+    final safe = MediaQuery.paddingOf(context);
     final isLandscape = size.width / size.height > 1.25;
     // The header only auto-hides in the landscape fullscreen layout; elsewhere
     // it stays put. The cursor hides on inactivity regardless.
@@ -144,11 +148,14 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
               // only. In square/portrait the volume moves to a horizontal
               // slider at the bottom of the details column.
               if (track != null && isLandscape)
-                const Positioned(
-                  left: 14,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(child: _VolumeSlider()),
+                // Offset by the safe insets so the slider stays clear of a
+                // left-side notch and sits in the same safe band (and the
+                // same _volumeGutter) as the SafeArea'd main content.
+                Positioned(
+                  left: safe.left + 14,
+                  top: safe.top,
+                  bottom: safe.bottom,
+                  child: const Center(child: _VolumeSlider()),
                 ),
 
               // Top bar (back + queue/devices) — kept for in-app navigation.
@@ -214,8 +221,8 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
 
               // Up Next preview (reference's next-music layer).
               Positioned(
-                top: MediaQuery.of(context).padding.top + 56,
-                right: 16,
+                top: safe.top + 56,
+                right: safe.right + 16,
                 child: _UpNextPreview(api: api),
               ),
             ],

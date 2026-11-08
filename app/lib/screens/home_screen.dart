@@ -11,6 +11,7 @@ import 'settings_screen.dart';
 import '../remote/device_picker.dart';
 import '../remote/remote_service.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/safe_sides.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -134,7 +135,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const VerticalDivider(width: 1),
-            Expanded(child: content),
+            // The rail pads the left inset; the content pads the right one
+            // (landscape notch on the right edge).
+            Expanded(
+              child: SafeArea(
+                  top: false, bottom: false, left: false, child: content),
+            ),
           ],
         ),
         // MiniPlayer as bottomNavigationBar so Scaffold reserves space; it
@@ -145,7 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Music'), actions: actions),
-      body: content,
+      body: SafeSides(child: content),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
