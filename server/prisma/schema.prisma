@@ -60,6 +60,7 @@ model Track {
 
   playlistTracks PlaylistTrack[]
   favorite       FavoriteTrack?
+  listens        ListenEvent[]
 }
 
 model CoverArt {
@@ -94,4 +95,31 @@ model FavoriteTrack {
   trackId   Int      @unique
   track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+}
+
+// One continuous listen of a track on one device. Clients send these with a
+// client-generated id and may re-send the same id as the listen grows (and to
+// retry after being offline); the server keeps the latest value.
+// Title/artist/album are snapshotted so history survives the file being
+// removed from the library (trackId then becomes null).
+model ListenEvent {
+  id        Int      @id @default(autoincrement())
+  clientId  String   @unique
+  trackId   Int?
+  track     Track?   @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  title     String
+  artist    String?
+  albumId   Int?
+  albumName String?
+  // The listener's local calendar date (YYYY-MM-DD) when the listen started.
+  day       String
+  startedAt DateTime
+  seconds   Float
+  // Listened long enough to count as a play (30s, or half of a short track).
+  counted   Boolean  @default(false)
+  device    String?
+  updatedAt DateTime @updatedAt
+
+  @@index([day])
+  @@index([trackId])
 }

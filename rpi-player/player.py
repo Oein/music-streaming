@@ -306,11 +306,141 @@ class Mpv:
 
 
 # --------------------------------------------------------------------------- #
+# Listening stats: report how long each track actually played here
+# --------------------------------------------------------------------------- #
+class ListenTracker:
+    """Measures real playback time per track and uploads it as listen events.
+
+    Mirrors app/lib/stats/listen_tracker.dart: only small forward steps of
+    mpv's time-pos while playing count, every load of a track is a new listen,
+    and events wait in an outbox file until the server has them (re-sending an
+    event with the same clientId just updates it).
+    """
+
+    MAX_STEP = 3.0
+    MIN_SECONDS = 2.0
+    FLUSH_EVERY = 60.0
+
+    def __init__(self, cfg: Config, mpv: Mpv) -> None:
+        self.cfg = cfg
+        self.mpv = mpv
+        self.token: Optional[str] = None
+        self.path = os.environ.get("LISTEN_OUTBOX") or os.path.join(
+            os.path.expanduser("~"), ".cache", "musicplayer-rpi", "listens.json"
+        )
+        self.outbox: dict[str, dict] = self._load()
+        self.cur: Optional[dict] = None
+        self._last_pos: Optional[float] = None
+        self._last_flush = time.monotonic()
+
+    # --- events from the device -------------------------------------------- #
+    def on_load(self, track_id: Any) -> None:
+        """A track was (re)loaded: close the previous listen, open a new one."""
+        self.close()
+        if isinstance(track_id, int):
+            now = time.time()
+            self.cur = {
+                "clientId": f"{self.cfg.device_id}-{int(now * 1000):x}-{random.getrandbits(32):x}",
+                "trackId": track_id,
+                "day": time.strftime("%Y-%m-%d", time.localtime(now)),
+                "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                "seconds": 0.0,
+                "device": self.cfg.device_name,
+            }
+        self._last_pos = None
+
+    def close(self) -> None:
+        cur, self.cur = self.cur, None
+        if cur and cur["seconds"] >= self.MIN_SECONDS:
+            self._stage(cur)
+
+    # --- sampling ----------------------------------------------------------- #
+    def sample(self) -> None:
+        pos = self.mpv.time_pos
+        last, self._last_pos = self._last_pos, pos
+        cur = self.cur
+        if cur is None or last is None or self.mpv.paused or self.mpv.idle:
+            return
+        step = pos - last
+        if 0 < step <= self.MAX_STEP:
+            cur["seconds"] += step
+            if cur["seconds"] - self.outbox.get(cur["clientId"], {}).get("seconds", 0) >= 15:
+                self._stage(cur)
+
+    async def run(self, stop: asyncio.Event) -> None:
+        while not stop.is_set():
+            await asyncio.sleep(1.0)
+            self.sample()
+            if time.monotonic() - self._last_flush >= self.FLUSH_EVERY:
+                await self.flush()
+        self.close()
+        await self.flush()
+
+    # --- outbox ------------------------------------------------------------- #
+    def _stage(self, ev: dict) -> None:
+        self.outbox[ev["clientId"]] = dict(ev, seconds=round(ev["seconds"], 1))
+        self._save()
+
+    def _load(self) -> dict[str, dict]:
+        try:
+            with open(self.path) as f:
+                return {e["clientId"]: e for e in json.load(f)}
+        except (OSError, ValueError, KeyError, TypeError):
+            return {}
+
+    def _save(self) -> None:
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            tmp = self.path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(list(self.outbox.values()), f)
+            os.replace(tmp, self.path)
+        except OSError as e:
+            log.warning("Could not save listen outbox: %s", e)
+
+    async def flush(self) -> None:
+        self._last_flush = time.monotonic()
+        cur = self.cur
+        if cur and cur["seconds"] >= self.MIN_SECONDS:
+            self._stage(cur)  # long tracks show up before they finish
+        if not self.outbox or not self.token:
+            return
+        batch = {k: dict(v) for k, v in self.outbox.items()}
+        try:
+            await asyncio.to_thread(self._post, list(batch.values()))
+        except Exception as e:
+            log.info("Listen upload failed, will retry: %s", e)
+            return
+        open_id = self.cur["clientId"] if self.cur else None
+        for k, sent in batch.items():
+            now = self.outbox.get(k)
+            if now is not None and now["seconds"] == sent["seconds"] and k != open_id:
+                del self.outbox[k]
+        self._save()
+
+    def _post(self, events: list) -> None:
+        req = urllib.request.Request(
+            f"{self.cfg.server_url}/api/stats/listens",
+            data=json.dumps({"events": events}).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.token}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, context=_tls_ctx(self.cfg), timeout=15) as resp:
+            resp.read()
+
+
+# --------------------------------------------------------------------------- #
 # Playback device: owns the queue and mirrors the app's remote protocol
 # --------------------------------------------------------------------------- #
 class Device:
-    def __init__(self, cfg: Config, token: str, mpv: Mpv) -> None:
+    def __init__(
+        self, cfg: Config, token: str, mpv: Mpv, listens: Optional[ListenTracker] = None
+    ) -> None:
         self.cfg = cfg
+        self.listens = listens
         self.token = token
         self.mpv = mpv
         self.queue: list[dict] = []
@@ -332,6 +462,8 @@ class Device:
         self.index = idx
         track = self.queue[idx]
         log.info("Playing [%d/%d] %s", idx + 1, len(self.queue), track.get("title"))
+        if self.listens:
+            self.listens.on_load(track.get("id"))
         await self.mpv.load(self._stream_url(track))
         await self.mpv.set_volume(self.volume)
 
@@ -397,6 +529,8 @@ class Device:
                 await self._play_index(max(0, min(start, len(self.queue) - 1)))
             else:
                 self.index = -1
+                if self.listens:
+                    self.listens.close()
                 await self.mpv.stop()
         elif command == "enqueue":
             track = payload.get("track")
@@ -539,13 +673,16 @@ async def amain() -> None:
 
     mpv = Mpv(cfg)
     await mpv.start()
+    listens = ListenTracker(cfg, mpv)
+    listens_task = asyncio.create_task(listens.run(stop))
 
     backoff = 1
     try:
         while not stop.is_set():
             try:
                 token = obtain_token(cfg)
-                device = Device(cfg, token, mpv)
+                listens.token = token
+                device = Device(cfg, token, mpv, listens)
                 await run_ws(cfg, token, device, stop)
                 backoff = 1
             except SystemExit:
@@ -561,6 +698,11 @@ async def amain() -> None:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30)
     finally:
+        stop.set()
+        try:
+            await asyncio.wait_for(listens_task, timeout=10)
+        except (asyncio.TimeoutError, Exception):
+            pass
         await mpv.shutdown()
         log.info("Shut down.")
 

@@ -80,6 +80,7 @@ Then open the Flutter app, tap the device picker, and pick **RPi Player**.
 | `ALSA_DEVICE` | no | e.g. `alsa/hw:1,0`; unset = system default |
 | `MPV_PATH` | no | if mpv isn't on PATH |
 | `INSECURE_TLS` | no | `1` for HTTPS servers with self-signed certs |
+| `LISTEN_OUTBOX` | no | where unsent listening-stats events wait; default `~/.cache/musicplayer-rpi/listens.json` |
 
 ## Supported remote commands
 

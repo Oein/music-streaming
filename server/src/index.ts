@@ -13,11 +13,14 @@ import { playlistRoutes } from "./routes/playlists.js";
 import { streamRoutes } from "./routes/stream.js";
 import { adminRoutes } from "./routes/admin.js";
 import { favoriteRoutes } from "./routes/favorites.js";
+import { statsRoutes } from "./routes/stats.js";
+import { ensureSchema } from "./db/ensureSchema.js";
 import { warmLibrary } from "./transcode/warmup.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
+  await ensureSchema();
   const app = Fastify({ logger: true });
 
   await app.register(cors, { origin: true });
@@ -77,6 +80,7 @@ async function main() {
   await app.register(streamRoutes);
   await app.register(adminRoutes);
   await app.register(favoriteRoutes);
+  await app.register(statsRoutes);
   await app.register(registerRemoteHub);
 
   // Redirect root to the web app if built, otherwise the admin page.
