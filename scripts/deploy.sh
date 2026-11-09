@@ -13,7 +13,7 @@
 # - DMG, IPA 는 macOS 가 필요하므로 GitHub Release(v* 태그로
 #   .github/workflows/release-apple.yml 이 만든 것)에서 받아 올린다.
 #   기본은 최신 릴리스, RELEASE_TAG=v0.2.0 처럼 지정 가능.
-# - 덮어쓰기 전에 기존 web 은 web.bak-<날짜>, 다운로드는 *.prev 로 남긴다.
+# - 덮어쓰기 전에 기존 web 은 web.bak-<날짜-시각>, 다운로드는 *.prev 로 남긴다.
 #
 # 볼륨 디렉터리는 root 소유라 publix 쪽 rsync 는 sudo 로 실행하고, 파일은
 # 컨테이너 사용자(3000:staff) 소유로 맞춘다.
@@ -37,7 +37,7 @@ PUBLIX_HOST="${PUBLIX_HOST:-publix}"
 # web 볼륨(publix-nfs-data-ssd-*, TrueNAS /mnt/ssd16/data-ssd/c258d2fb 의 NFS)
 PUBLIX_WEB=/var/lib/docker/volumes/publix-nfs-data-ssd-5912683cd7f6/_data/web
 PUBLIX_DL=/mnt/data-hdd/c258d2fb/downloads
-TODAY="$(date +%Y%m%d)"
+TODAY="$(date +%Y%m%d-%H%M)"
 
 remote() { ssh -o BatchMode=yes "$PUBLIX_HOST" "$@"; }
 
