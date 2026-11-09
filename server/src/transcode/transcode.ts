@@ -6,6 +6,24 @@ import type { Readable } from "node:stream";
 // client declares it can't play them we transcode to AAC.
 const NATIVELY_SAFE = new Set(["mp3", "wav", "m4a"]);
 
+// Bitrate of the compatibility transcode (formats a client can't decode).
+export const DEFAULT_BITRATE_K = 192;
+
+// Download/stream quality tiers a client can request with `?quality=`.
+// "high" matches the compatibility transcode so both share one cache file.
+export const QUALITY_BITRATES_K = {
+  high: DEFAULT_BITRATE_K,
+  medium: 128,
+  low: 96,
+} as const;
+export type Quality = keyof typeof QUALITY_BITRATES_K;
+
+export function parseQuality(raw: unknown): Quality | null {
+  return typeof raw === "string" && raw in QUALITY_BITRATES_K
+    ? (raw as Quality)
+    : null;
+}
+
 export interface TranscodeDecision {
   transcode: boolean;
   // Container/codec we transcode to when needed.
@@ -66,7 +84,11 @@ export function transcodeToAac(filePath: string): Readable {
 // successfully. Unlike transcodeToAac (a live pipe), this produces a COMPLETE
 // on-disk file that can then be served with Content-Length + Range, so players
 // can buffer/seek instead of stalling or showing a permanent "buffering" state.
-export function transcodeToFile(filePath: string, outPath: string): Promise<void> {
+export function transcodeToFile(
+  filePath: string,
+  outPath: string,
+  bitrateK: number = DEFAULT_BITRATE_K
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const args = [
       "-hide_banner",
@@ -79,7 +101,7 @@ export function transcodeToFile(filePath: string, outPath: string): Promise<void
       "-c:a",
       "aac",
       "-b:a",
-      "192k",
+      `${bitrateK}k`,
       "-f",
       "adts",
       outPath,

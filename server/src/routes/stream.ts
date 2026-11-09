@@ -3,7 +3,11 @@ import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireAuth } from "../auth/auth.js";
 import { prisma } from "../db/client.js";
-import { decideTranscode } from "../transcode/transcode.js";
+import {
+  decideTranscode,
+  parseQuality,
+  QUALITY_BITRATES_K,
+} from "../transcode/transcode.js";
 import { ensureTranscoded } from "../transcode/cache.js";
 import { warmTracks } from "../transcode/warmup.js";
 
@@ -64,7 +68,10 @@ export async function streamRoutes(app: FastifyInstance) {
     return reply.code(202).send({ ok: true, queued: ids.length });
   });
 
-  // GET /api/stream/:id?canPlay=mp3,wav,flac&token=...
+  // GET /api/stream/:id?canPlay=mp3,wav,flac&quality=high|medium|low&token=...
+  // `quality` (optional) asks for an AAC transcode at that tier — used by
+  // offline downloads. The served tier is reported in X-Audio-Quality
+  // ("original" | "high" | "medium" | "low").
   app.get("/api/stream/:id", async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     const track = await prisma.track.findUnique({ where: { id } });
@@ -88,6 +95,25 @@ export async function streamRoutes(app: FastifyInstance) {
 
     const decision = decideTranscode(track.format, clientCanPlay);
 
+    // Requested quality tier. Skipped when the source is already at or below
+    // the tier's bitrate (lossy sources): re-encoding would only lose quality.
+    const quality = parseQuality((req.query as { quality?: string }).quality);
+    if (quality) {
+      const targetK = QUALITY_BITRATES_K[quality];
+      const sourceK = track.bitrate ? track.bitrate / 1000 : null;
+      const lossless = ["flac", "wav"].includes(track.format.toLowerCase());
+      if (lossless || sourceK == null || sourceK > targetK * 1.1) {
+        try {
+          const cached = await ensureTranscoded(track, targetK);
+          reply.header("X-Audio-Quality", quality);
+          return await serveFile(req, reply, cached, "audio/aac");
+        } catch (err) {
+          req.log.error({ err }, "quality transcode failed");
+          return reply.code(500).send({ error: "transcode failed" });
+        }
+      }
+    }
+
     // Transcoded path: transcode once to a cached file, then serve it like any
     // other file (Content-Length + Range). This replaces the old live ffmpeg
     // pipe, which — being non-seekable with no Content-Length — made players
@@ -95,6 +121,7 @@ export async function streamRoutes(app: FastifyInstance) {
     if (decision.transcode) {
       try {
         const cached = await ensureTranscoded(track);
+        reply.header("X-Audio-Quality", "high");
         return await serveFile(req, reply, cached, decision.contentType);
       } catch (err) {
         req.log.error({ err }, "transcode failed");
@@ -105,6 +132,7 @@ export async function streamRoutes(app: FastifyInstance) {
     // Original file, served with Range support.
     const ext = path.extname(track.filePath).slice(1).toLowerCase();
     const contentType = MIME_BY_EXT[ext] ?? "application/octet-stream";
+    reply.header("X-Audio-Quality", "original");
     return serveFile(req, reply, track.filePath, contentType);
   });
 }

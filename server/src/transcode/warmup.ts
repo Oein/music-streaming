@@ -9,6 +9,7 @@ import {
   isCached,
   needsCache,
 } from "./cache.js";
+import { QUALITY_BITRATES_K } from "./transcode.js";
 
 let running = false;
 
@@ -32,6 +33,10 @@ export async function cleanupOrphans(log?: FastifyBaseLogger): Promise<void> {
   const valid = new Set<string>();
   for (const t of tracks) {
     if (needsCache(t.format)) valid.add(path.basename(cachePathFor(t)));
+    // Quality-tier transcodes (made on demand for downloads) of live tracks.
+    for (const k of Object.values(QUALITY_BITRATES_K)) {
+      valid.add(path.basename(cachePathFor(t, k)));
+    }
   }
 
   let removed = 0;

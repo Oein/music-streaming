@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
-import { transcodeToFile } from "./transcode.js";
+import { DEFAULT_BITRATE_K, transcodeToFile } from "./transcode.js";
 
 // Formats served directly to every client (never transcoded). Anything else
 // (flac, ogg, oga, ...) gets an AAC cache entry that transcoding clients — e.g.
@@ -20,10 +20,15 @@ export interface CacheableTrack {
 }
 
 // Cache path is keyed by id + source size so a replaced source invalidates it.
-export function cachePathFor(track: { id: number; fileSize: number }): string {
+// Non-default bitrates (quality tiers) get a `_<k>k` suffix.
+export function cachePathFor(
+  track: { id: number; fileSize: number },
+  bitrateK: number = DEFAULT_BITRATE_K
+): string {
+  const suffix = bitrateK === DEFAULT_BITRATE_K ? "" : `_${bitrateK}k`;
   return path.join(
     config.transcodeCacheDir,
-    `${track.id}_${track.fileSize}.aac`
+    `${track.id}_${track.fileSize}${suffix}.aac`
   );
 }
 
@@ -47,8 +52,11 @@ const inflight = new Map<string, Promise<string>>();
 // Transcode `track` to a complete AAC file in the cache dir (once), returning
 // its path. Writes to a .part temp file and atomically renames on success so a
 // crashed/partial transcode is never served.
-export async function ensureTranscoded(track: CacheableTrack): Promise<string> {
-  const out = cachePathFor(track);
+export async function ensureTranscoded(
+  track: CacheableTrack,
+  bitrateK: number = DEFAULT_BITRATE_K
+): Promise<string> {
+  const out = cachePathFor(track, bitrateK);
   try {
     await fs.access(out);
     return out; // already cached
@@ -61,7 +69,7 @@ export async function ensureTranscoded(track: CacheableTrack): Promise<string> {
     const tmp = `${out}.part`;
     job = (async () => {
       await fs.mkdir(config.transcodeCacheDir, { recursive: true });
-      await transcodeToFile(track.filePath, tmp);
+      await transcodeToFile(track.filePath, tmp, bitrateK);
       await fs.rename(tmp, out);
       return out;
     })().finally(() => inflight.delete(out));
