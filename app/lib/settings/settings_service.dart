@@ -1,11 +1,18 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // User-tunable playback/UI preferences, persisted locally.
+//
+// Stored in SharedPreferences: nothing here is secret, and the keychain-backed
+// secure storage fails silently in unsigned builds (DMG/IPA), which made every
+// setting reset on restart. Older installs that only have the secure-storage
+// copy are read once and migrated.
 class SettingsService extends ChangeNotifier {
-  static const _storage = FlutterSecureStorage();
+  static const _legacyStorage = FlutterSecureStorage();
   static const _key = 'settings';
+  static const _prefsKey = 'settings_v1';
 
   // How many upcoming tracks to buffer ahead (maps to player buffer sizing).
   int preloadCount = 2;
@@ -25,7 +32,15 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> load() async {
     try {
-      final raw = await _storage.read(key: _key);
+      String? raw;
+      try {
+        raw = (await SharedPreferences.getInstance()).getString(_prefsKey);
+      } catch (_) {}
+      if (raw == null) {
+        try {
+          raw = await _legacyStorage.read(key: _key);
+        } catch (_) {}
+      }
       if (raw != null) {
         final j = jsonDecode(raw) as Map<String, dynamic>;
         preloadCount = (j['preloadCount'] as int?) ?? preloadCount;
@@ -44,9 +59,10 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> _save() async {
     try {
-      await _storage.write(
-        key: _key,
-        value: jsonEncode({
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _prefsKey,
+        jsonEncode({
           'preloadCount': preloadCount,
           'maxCacheMB': maxCacheMB,
           'showLoadingIndicator': showLoadingIndicator,
