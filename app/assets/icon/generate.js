@@ -126,4 +126,13 @@ fs.writeFileSync(path.join(res, 'mipmap-anydpi-v26/ic_launcher.xml'), `<?xml ver
     <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
 </adaptive-icon>
 `);
+// Web (PWA): rounded icon for "any", full-bleed for "maskable" (the disc
+// stays inside the 80% maskable safe zone), plus the favicon.
+const web = path.join(app, 'web');
+render('icon_macos.svg', 32, path.join(web, 'favicon.png'));
+for (const px of [192, 512]) {
+  render('icon_macos.svg', px, path.join(web, 'icons', `Icon-${px}.png`));
+  render('icon.svg', px, path.join(web, 'icons', `Icon-maskable-${px}.png`));
+}
+
 console.log('icons generated');
