@@ -7,6 +7,7 @@ import '../cache/audio_cache_service.dart';
 import '../models/models.dart';
 import '../remote/remote_service.dart';
 import '../settings/settings_service.dart';
+import '../stats/listen_tracker.dart';
 import 'audio_handler.dart';
 import 'media_session.dart' as media_session;
 
@@ -26,6 +27,9 @@ class PlayerService extends ChangeNotifier {
   late Stream<Duration> _positionStream;
   Duration _position = Duration.zero;
   Track? _lastTrack;
+  // Reports how long tracks actually play on this device (listening stats).
+  late final ListenTracker _listens =
+      ListenTracker(api, deviceName: () => remote.deviceName);
   // Tracks the local→remote transition so we pause local playback exactly once
   // when control moves to another device.
   bool _wasRemote = false;
@@ -120,13 +124,20 @@ class PlayerService extends ChangeNotifier {
       _updateMediaSession();
       notifyListeners();
     }));
-    _subs.add(_player.playerStateStream.listen((_) {
+    _subs.add(_player.playerStateStream.listen((s) {
+      if (s.processingState == ProcessingState.idle) _listens.endCurrent();
+      // Upload the listen so far whenever playback pauses or stops.
+      if (!s.playing) _listens.flush();
       _broadcast();
       _updateMediaSession();
       notifyListeners();
     }));
     _subs.add(_player.positionStream.listen((p) {
       _position = p;
+      _listens.onTrack(_localTrackId);
+      _listens.onPosition(p,
+          playing: _player.playing &&
+              _player.processingState == ProcessingState.ready);
       _broadcast();
       _updateMediaSession();
       notifyListeners();
@@ -145,6 +156,7 @@ class PlayerService extends ChangeNotifier {
 
   // Recreate the player with new load settings (stops current playback).
   Future<void> _reconfigure() async {
+    _listens.endCurrent();
     for (final s in _subs) {
       await s.cancel();
     }
@@ -252,6 +264,15 @@ class PlayerService extends ChangeNotifier {
   Stream<int?> get currentIndexStream => _player.currentIndexStream;
 
   bool get _remote => remote.isRemote;
+
+  /// Uploads listening time recorded so far (e.g. before showing stats).
+  Future<void> flushListens() => _listens.flush();
+
+  // The track loaded in the LOCAL player, regardless of the remote target.
+  int? get _localTrackId {
+    final idx = _player.currentIndex;
+    return idx != null && idx >= 0 && idx < _queue.length ? _queue[idx].id : null;
+  }
 
   // Shuffle is a persistent mode (enable/disable), not a one-shot re-shuffle.
   bool get shuffleEnabled => _remote
@@ -628,6 +649,8 @@ class PlayerService extends ChangeNotifier {
   void dispose() {
     remote.removeListener(_onRemoteChanged);
     api.removeListener(_onAuthChanged);
+    _listens.endCurrent();
+    _listens.dispose();
     for (final s in _subs) {
       s.cancel();
     }

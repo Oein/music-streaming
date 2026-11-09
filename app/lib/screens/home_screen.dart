@@ -8,6 +8,7 @@ import 'playlists_screen.dart';
 import 'queue_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
+import 'stats_screen.dart';
 import '../remote/device_picker.dart';
 import '../remote/remote_service.dart';
 import '../widgets/mini_player.dart';
@@ -96,7 +97,10 @@ class _HomeScreenState extends State<HomeScreen> {
       }),
       PopupMenuButton<String>(
         onSelected: (v) {
-          if (v == 'settings') {
+          if (v == 'stats') {
+            Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const StatsScreen()));
+          } else if (v == 'settings') {
             Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const SettingsScreen()));
           } else if (v == 'logout') {
@@ -104,6 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         },
         itemBuilder: (context) => const [
+          PopupMenuItem(value: 'stats', child: Text('Listening stats')),
           PopupMenuItem(value: 'settings', child: Text('Settings')),
           PopupMenuItem(value: 'logout', child: Text('Logout')),
         ],

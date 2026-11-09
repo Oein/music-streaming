@@ -187,6 +187,38 @@ class ApiClient extends ChangeNotifier {
   Future<void> removeFavorite(int trackId) =>
       _send('DELETE', '/api/favorites/$trackId');
 
+  // --- Listening stats ---
+  Future<void> postListens(List<Map<String, dynamic>> events) =>
+      _send('POST', '/api/stats/listens', {'events': events});
+
+  static String _rangeQuery(DateTime? from, DateTime? to) {
+    final q = [
+      if (from != null) 'from=${formatDay(from)}',
+      if (to != null) 'to=${formatDay(to)}',
+    ];
+    return q.isEmpty ? '' : '?${q.join('&')}';
+  }
+
+  Future<List<ListenDay>> listenCalendar(DateTime from, DateTime to) async {
+    final res = await _get('/api/stats/calendar${_rangeQuery(from, to)}');
+    return ((res as Map)['days'] as List)
+        .map((e) => ListenDay.fromJson((e as Map).cast()))
+        .toList();
+  }
+
+  Future<DayListenDetail> listenDay(DateTime day) async =>
+      DayListenDetail.fromJson(
+          (await _get('/api/stats/day/${formatDay(day)}') as Map).cast());
+
+  // Most played in [from]..[to] (both inclusive); all time when null.
+  Future<TopListens> topListens(
+      {DateTime? from, DateTime? to, int limit = 10}) async {
+    final range = _rangeQuery(from, to);
+    final sep = range.isEmpty ? '?' : '&';
+    return TopListens.fromJson(
+        (await _get('/api/stats/top$range${sep}limit=$limit') as Map).cast());
+  }
+
   // --- Media URLs ---
   // Optional [size] requests a square WebP thumbnail (smaller transfer for
   // list/search views); omit for the full-resolution cover.
